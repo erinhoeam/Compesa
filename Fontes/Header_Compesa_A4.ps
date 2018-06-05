@@ -1,0 +1,220 @@
+true 0 startjob pop
+userdict begin
+
+/GetTiffDictionary 65 dict def
+GetTiffDictionary begin
+/ParseTiffInfo {
+  /fobj fname (r) file def
+  /Type 0 def             % 73=Intel 77=Motorola
+  /Version 0 def
+  /Dirptr 4 def
+  /NumTags 0 def
+  /Tag 0 def
+  /TagType 0 def
+  /TagValue 0 def
+  /ImageWidth 0 def       % 256 (0x100) Short/Long
+  /ImageLength 0 def      % 257 (0x101) Short/Long
+  /BitsPerSample 0 def    % 258 (0x102) Short 1=default
+  /Compress 0 def         % 259 (0x103) Short 1=None, 4=ccitt-T6
+  /Colour 0 def           % 262 (0x106) Short 0=Whiteiszero, 1=Blackiszero
+  /FillOrder 0 def        % 266 (0x10a) Short 1=msb-to-lsb, 2=lsb-to-msb
+  /StripOffset 0 def      % 273 (0x111) Short/Long
+  /Orientation 0 def      % 274 (0x112) Short 1=row 0 top, col 0 lhs... etc. 
+  /SamplesPerPixel 0 def  % 277 (0x115) Short 1=bilevel, 3=rgb
+  /RowsPerStrip 0 def     % 278 (0x116) Short/Long
+  /StripByteCount 0 def   % 279 (0x117) Short/Long
+  /MinSample 0 def        % 280 (0x118) Short
+  /MaxSample 0 def        % 281 (0x119) Short
+  /Xres 0 def             % 282 (0x11a) Rational
+  /Yres 0 def             % 283 (0x11b) Rational
+  /PlanarConfig 0 def     % 284 (0x11c) Short 1=default
+  /ResUnit 0 def          % 296 (128) Short
+  /ReadByte { fobj read pop } bind def
+  /Type fobj 01 setfileposition ReadByte store
+  Type 77 eq
+     { 
+       /ReadShort { ReadByte ReadByte exch 8 bitshift add } bind def
+       /ReadLong { ReadShort ReadShort exch 16 bitshift add } bind def
+       }
+     { 
+       /ReadShort { ReadByte ReadByte 8 bitshift add } bind def
+       /ReadLong { ReadShort ReadShort 16 bitshift add } bind def
+       } ifelse
+  /ReadRat { ReadLong ReadLong div } bind def
+  /Version ReadShort store
+  /Dirptr ReadLong store
+  /NumTags fobj Dirptr setfileposition ReadShort store
+  /Pos fobj fileposition def
+  NumTags { 
+        /TagArray 4 array def
+        TagArray 0 ReadShort put
+        TagArray 1 ReadShort put
+        TagArray 2 ReadLong put
+        TagArray 1 get
+        dup 1 eq { TagArray 3 ReadByte put }if
+        dup 2 eq { TagArray 3 ReadByte put }if
+        dup 3 eq { TagArray 3 ReadShort put }if
+        dup 4 eq { TagArray 3 ReadLong put }if
+            5 eq { TagArray 3 ReadLong put }if
+        TagArray 0 get
+        dup 256 eq { /ImageWidth TagArray 3 get store }if
+        dup 257 eq { /ImageLength TagArray 3 get store }if
+        dup 258 eq { /BitsPerSample TagArray 3 get store }if
+        dup 259 eq { /Compress TagArray 3 get store }if
+        dup 262 eq { /Colour TagArray 3 get store }if
+        dup 266 eq { /FillOrder TagArray 3 get store }if
+        dup 273 eq { /StripOffset TagArray 3 get store }if
+        dup 274 eq { /Orientation TagArray 3 get store }if
+        dup 277 eq { /SamplesPerPixel TagArray 3 get store }if
+        dup 278 eq { /RowsPerStrip TagArray 3 get store }if
+        dup 279 eq { /StripByteCount TagArray 3 get store }if
+        dup 280 eq { /MinSample TagArray 3 get store }if
+        dup 281 eq { /MaxSample TagArray 3 get store }if
+        dup 282 eq { /Xres TagArray 3 get 
+                    fobj exch setfileposition ReadRat store }if
+        dup 283 eq { /Yres TagArray 3 get
+                    fobj exch setfileposition ReadRat store }if
+        dup 284 eq { /PlanarConfig TagArray 3 get store }if
+            296 eq { /ResUnit TagArray 3 get store }if
+        /Pos Pos 12 add store
+        fobj Pos setfileposition
+        } repeat  
+    } bind def
+/TranslateImageSpace {
+	/XRX-OrientationNotDone true def
+	Orientation 6 eq { 
+	    /XRX-OrientationNotDone false def
+	    -90 rotate ImageWidth Xres 72 div div neg 0 translate } if
+	Orientation 8 eq {
+	    /XRX-OrientationNotDone false def
+ 	    90 rotate 0 ImageLength Yres 72 div div neg translate } if
+	XRX-OrientationNotDone {
+		ImageWidth ImageLength gt {
+                90 rotate 0 ImageLength Yres 72 div div neg translate} if
+	} if
+ } bind def
+%
+%  ********** DECODE CCITT DATA  ********
+/DecodeFile {
+   Compress 1 eq { 
+      /DecodeTemp 8 1024 mul string def
+      fobj StripOffset setfileposition
+      ImageWidth ImageLength true [Xres 72 div 0 0 Yres neg 72 div 0 ImageLength] 
+      TranslateImageSpace
+      {fobj DecodeTemp readstring pop} bind
+      imagemask
+      fobj closefile } if
+   Compress 4 eq {  
+	/SetBitOrder false def
+	FillOrder 2 eq {/SetBitOrder true def } if
+        fobj StripOffset setfileposition
+        ImageWidth ImageLength false [Xres 72 div 0 0 Yres neg 72 div 0 ImageLength]
+        fobj
+        <<
+           /Uncompressed false
+           /K -1
+	   /FirstBitLowOrder SetBitOrder    % Does FillOrder 2
+           /EndOfLine false
+           /EncodedByteAlign false
+           /Columns ImageWidth
+           /Rows ImageLength  
+           /EndOfBlock false
+           /Blackls1 false
+         >> /CCITTFaxDecode filter
+        TranslateImageSpace
+        imagemask
+        fobj closefile
+   } if 
+} bind def
+%  *********** End Decode CCITT Data *****************
+end 	%GetTiffDictionary end
+%  *************** define /fname as the name on the stack, Parse Header and 
+%  *************** Image the tiff file
+/GetTiff {
+   GetTiffDictionary begin
+   gsave
+   /fname exch def
+   ParseTiffInfo
+   DecodeFile
+   grestore
+   end } bind def
+
+end
+
+
+
+/pontos { .24 mul } def
+%!PS-Adobe-3.0
+
+/bd{bind def}bind def/nd{.notdef}bd
+
+/reencode{findfont begin currentdict dup length dict begin{1 index/FID ne{def}
+{pop pop}ifelse}forall/FontName exch def dup length 0 ne{/Encoding Encoding 256
+array copy def 0 exch{dup type/nametype eq{Encoding 2 index 2 index put pop 1
+add}{exch pop}ifelse}forall}if pop currentdict dup end end/FontName get exch
+definefont dup MapDegree MapBB}bd
+
+/IsChar{exch/CharStrings get exch known}bd/MapCh{3 -1 roll/Encoding get 3 1
+roll put}bd/MapDegree{dup 16#b0 exch/degree IsChar{/degree}{/ring}ifelse MapCh}
+bd/MapBB{dup 16#a6 exch/brokenbar IsChar{/brokenbar}{/bar}ifelse MapCh}bd
+/reencode{findfont begin currentdict dup length dict begin{1 index/FID ne{def}
+{pop pop}ifelse}forall/FontName exch def dup length 0 ne{/Encoding Encoding 256
+array copy def 0 exch{dup type/nametype eq{Encoding 2 index 2 index put pop 1
+add}{exch pop}ifelse}forall}if pop currentdict dup end end/FontName get exch
+definefont dup MapDegree MapBB}bd
+/STLENCODE[0/grave/acute/circumflex/tilde/macron                                                                                % 0 a 4
+/breve/dotaccent/dieresis/ring/cedilla/hungarumlaut/ogonek/caron/dotlessi/fi/fl                                                 % 5 a 15
+/Lslash/lslash/Zcaron/zcaron/minus/nd/nd/nd/nd/nd                                                                               % 16 a 25
+/nd/nd/nd/nd/nd/ndf/space/exclam/quotedbl                                                                                       % 26 a 34
+/numbersign/dollar/percent/ampersand/quotesingle/parenleft/parenright/asterisk                                                  % 35 a 42
+/plus/comma/hyphen/period/slash/zero/one/two/three/four/five/six/seven/eight                                                    % 43 a 56
+/nine/colon/semicolon/less/equal/greater/question/at/A/B/C/D/E/F/G/H/I/J/K/L/M                                                  % 57 a 77
+/N/O/P/Q/R/S/T/U/V/W/X/Y/Z/bracketleft/backslash/bracketright/asciicircum                                                       % 78 a 94
+/underscore/grave/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z/braceleft                                                 % 95 a 123
+/bar/braceright/asciitilde/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd                                                   % 124 a 143
+/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd                                                                                % 144 a 159
+/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd                                                                                            % 160 a 171
+/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/nd/ordmasculine/nd/nd                                                                             % 172 a 188
+/nd/nd/nd/Agrave/Aacute/Acircumflex/Atilde/nd/nd/nd/Ccedilla/nd/Eacute                                                          % 189 a 201
+/Ecircumflex/nd/nd/Iacute/nd/nd/nd/nd/nd/Oacute/Ocircumflex/Otilde/ocircumflex/nd/nd/nd                                         % 202 a 217
+/Uacute/nd/Udieresis/nd/nd/nd/agrave/aacute/acircumflex/atilde/nd/nd/nd/ccedilla/ecircumflex/eacute/ecircumflex/nd/nd/iacute/nd/nd       % 218 a 239
+/nd/nd/nd/oacute/ocircumflex/otilde/nd/nd/nd/nd/uacute/nd/udieresis/nd/nd/nd]def                                                % 240 a 255
+
+STLENCODE /Courier-AP                          /Courier                        reencode
+STLENCODE /Courier-Bold-AP                     /Courier-Bold                   reencode
+STLENCODE /Courier-BoldOblique-AP              /Courier-BoldOblique            reencode
+STLENCODE /Courier-Oblique-AP                  /Courier-Oblique                reencode
+STLENCODE /Helvetica-AP                        /Helvetica                      reencode
+STLENCODE /Helvetica-Black-AP                  /Helvetica-Black                reencode
+STLENCODE /Helvetica-Bold-AP                   /Helvetica-Bold                 reencode
+STLENCODE /Helvetica-Condensed-AP              /Helvetica-Condensed            reencode
+STLENCODE /Helvetica-Condensed-Bold-AP         /Helvetica-Condensed-Bold       reencode
+STLENCODE /Helvetica-Condensed-BoldObl-AP      /Helvetica-Condensed-BoldObl    reencode
+STLENCODE /Monospace821BT-Roman-AP             /Monospace821BT-Roman           reencode
+STLENCODE /Monospace821BT-Bold-AP              /Monospace821BT-Bold            reencode
+STLENCODE /LetterGothic12PitchBT-Roman-AP      /LetterGothic12PitchBT-Roman    reencode
+STLENCODE /LetterGothic12PitchBT-Bold-AP       /LetterGothic12PitchBT-Bold     reencode
+STLENCODE /LetterGothic12PitchBT-Italic-AP     /LetterGothic12PitchBT-Italic   reencode
+STLENCODE /LetterGothic12PitchBT-BoldItal-AP   /LetterGothic12PitchBT-BoldItal reencode
+STLENCODE /Garamond-LightItalic-AP             /Garamond-LightItalic           reencode
+STLENCODE /Garamond-BoldItalic-AP              /Garamond-BoldItalic            reencode
+STLENCODE /Garamond-Bold-AP                    /Garamond-Bold                  reencode
+STLENCODE /Garamond-Light-AP                   /Garamond-Light                 reencode
+STLENCODE /ErasITCbyBT-Bold-AP                 /ErasITCbyBT-Bold               reencode
+STLENCODE /ErasITCbyBT-Demi-AP                 /ErasITCbyBT-Demi               reencode
+STLENCODE /ErasITCbyBT-Book-AP                 /ErasITCbyBT-Book               reencode
+STLENCODE /ErasITCbyBT-Medium-AP               /ErasITCbyBT-Medium             reencode
+STLENCODE /Times-Roman-AP                      /Times-Roman                    reencode
+STLENCODE /Times-BoldItalic-AP                 /Times-BoldItalic               reencode
+STLENCODE /Swiss721BT-Heavy-AP                 /Swiss721BT-Heavy               reencode
+STLENCODE /ACaslon-Semibold-AP                 /ACaslon-Semibold               reencode
+STLENCODE /Barmeno-Medium-AP                   /Barmeno-Medium                 reencode
+STLENCODE /Barmeno-Regular-AP                  /Barmeno-Regular                reencode
+STLENCODE /Barmeno-Bold-AP                     /Barmeno-Bold                   reencode
+STLENCODE /Barmeno-ExtraBold-AP                /Barmeno-ExtraBold              reencode
+STLENCODE /MattAntiqueBT-Italic-AP             /MattAntiqueBT-Italic           reencode
+STLENCODE /BalloonBT-ExtraBold-AP              /BalloonBT-ExtraBold            reencode
+STLENCODE /CopperplateGothicBT-RomanCond        /CopperplateGothicBT-RomanCond  reencode
+STLENCODE /Square721BT-Roman-AP                /Square721BT-Roman              reencode
+STLENCODE /Square721BT-RomanCondensed-AP       /Square721BT-RomanCondensed     reencode
+%%STLENCODE /NovaFonte                          /FonteOrigem                    reencode
